@@ -162,11 +162,12 @@ def load(stream):
     return loads(data)
 
 def loads(text):
-    inline_pattern = re.compile(r'[ \t]*\/\/(.*)')
-    multiline_pattern = re.compile(r'[ \t]*\/\*(((?!\/\*).)|\n|\r)*\*\/')
+    inline_pattern = re.compile(r'(?:^|[ \t])+\/\/(.*)', re.MULTILINE)
+    multiline_pattern = re.compile(r'(?:^|[ \t])+\/\*(((?!\/\*).)|\n|\r)*\*\/')
 
     no_comments = re.sub(inline_pattern, '', text)
     no_comments = re.sub(multiline_pattern, '', no_comments)
+
     json_obj = json.loads(no_comments)
 
     dict_obj = JSONCDict(**json_obj)
