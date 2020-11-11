@@ -1,0 +1,4 @@
+twine
+wheel
+bump2version==1.0.1
+bumpversion==0.6.0
