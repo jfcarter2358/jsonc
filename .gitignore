@@ -1,4 +1,7 @@
-.DS_Store
+/test/test.out.json
+/test/test.out.jsonc
+
+DS_Store
 .vscode/
 pip-wheel-metadata/
 
