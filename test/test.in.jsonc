@@ -12,6 +12,12 @@
             <!-- multiline html comment
             -->
             # this is a python comment
+            """
+            a multiline python comment
+            """
+            '''
+            another multiline python comment
+            '''
             "AUTH_AUTHORIZATION_URI": "https://localhost:9031/as/authorization.oauth2", ; this is an algol comment
             "AUTH_INTROSPECTION_URI": "https://pingfederate:9031/as/introspect.oauth2", # oh look an ending python comment
             "AUTH_ISSUER_URI": "https://pingfederate:9031",

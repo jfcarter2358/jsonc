@@ -4,7 +4,6 @@ import urllib.parse
 import difflib
 
 __version__ = '0.0.4'
-INDENT=4
 
 _hdr_pat = re.compile("^@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@$")
 _no_eol = "\ No newline at end of file"
@@ -17,6 +16,8 @@ inline_patterns = [
 
 block_patterns = [
     '(?:^|[ \t])+\/\*(((?!\/\*).)|\n|\r)*\*\/',
+    '(?:^|[ \t])+"""(((?!""").)|\n|\r)*"""',
+    '(?:^|[ \t])+\'\'\'(((?!\'\'\').)|\n|\r)*\'\'\'',
     '(?:^|[ \t])+<!--(((?!<!--).)|\n|\r)*-->'
 ]
 
@@ -65,7 +66,7 @@ class JSONCDict(dict):
         so that the comments don't get out of sync with where they should be
         """
         data = {key: self[key] for key in self}
-        new_without_comments = json.dumps(data, indent=INDENT)
+        new_without_comments = json.dumps(data, indent=4)
         # get the changes for the text without comments
         diff = self.make_patch(new_without_comments, self.without_comments)
         # adjust the diff for applying comments to reflect how the json has changed
@@ -230,21 +231,35 @@ def loads(text):
     json_obj = json.loads(no_comments)
 
     dict_obj = JSONCDict(**json_obj)
-    dict_obj.without_comments = json.dumps(json_obj, indent=INDENT)
+    dict_obj.without_comments = json.dumps(json_obj, indent=4)
     dict_obj.with_comments = text
     dict_obj.comment_diff = dict_obj.make_patch(dict_obj.without_comments, text)
 
     return dict_obj
 
-def dumps(data):
+def dumps(data, indent=4, comments=True):
     """
     Write the JSONCDict to a string
     """
-    return data.with_comments
+    if indent <=0 :
+        err = ValueError('Indent value must be greater or equal to 1')
+        raise err
+    if comments:
+        lines = data.with_comments.split('\n')
+    else:
+        lines = data.without_comments.split('\n')
+    for i in range(0, len(lines)):
+        line_strip = lines[i].lstrip()
+        space_count = len(lines[i]) - len(line_strip)
+        indent_level = space_count / 4
+        space_count = int(indent_level * indent)
+        lines[i] = ' ' * space_count + line_strip
 
-def dump(data, stream):
+    return '\n'.join(lines)
+
+def dump(data, stream, indent=4, comments=True):
     """
     Write the JSONCDict to a file
     """
-    text = dumps(data)
+    text = dumps(data, indent=indent, comments=comments)
     stream.write(text)

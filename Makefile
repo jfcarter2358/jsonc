@@ -1,4 +1,4 @@
-.PHONY: bump-major bump-minor bump-patch
+.PHONY: bump-major bump-minor bump-patch test pypi-build pypi-test pypi-upload
 
 bump-major:
 	bumpversion major jsonc/VERSION
@@ -18,3 +18,6 @@ pypi-test:
 
 pypi-upload:
 	twine upload dist/*
+
+test:
+	python test.py
