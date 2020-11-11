@@ -10,31 +10,57 @@ _no_eol = "\ No newline at end of file"
 
 class JSONCDict(dict):
     def __init__(self, *args, **kwargs):
+        """
+        Initialize the dictionary
+        """
         super(JSONCDict, self).__init__(*args, **kwargs)
+        # create the variables that we'll use to deal with the comments
         self.with_comments = ''
         self.without_comments = ''
         self.comment_diff = ''
 
     def __setitem__(self, key, value):
+        """
+        Set an item in the dictionary
+        """
         super(JSONCDict, self).__setitem__(key, value)
+        # refresh the diff along with the internal string representations
+        # of the dictionary
         self.refresh()
 
     def __delitem__(self, key):
+        """
+        Delete an item from the dictionary
+        """
         super(JSONCDict, self).__delitem__(key)
+        # refresh the diff along with the internal string representations
+        # of the dictionary
         self.refresh()
 
     def clear():
+        """
+        Clear the dictioanry
+        """
         super(JSONCDict, self).clear()
+        # clear the internal variables
         self.without_comments = '{}'
         self.with_comments = '{}'
         self.comment_diff = ''
 
     def refresh(self):
+        """
+        Apply the diff for what has changed every time an update is made
+        so that the comments don't get out of sync with where they should be
+        """
         data = {key: self[key] for key in self}
         new_without_comments = json.dumps(data, indent=4)
+        # get the changes for the text without comments
         diff = self.make_patch(new_without_comments, self.without_comments)
+        # adjust the diff for applying comments to reflect how the json has changed
         merged_diff = self.merge_diff(diff, self.comment_diff)
+        # apply the comments
         new_with_comments = self.apply_patch(new_without_comments, merged_diff)
+        # update the variables
         self.without_comments = new_without_comments
         self.with_comments = new_with_comments
         self.comment_diff = self.make_patch(self.without_comments, new_with_comments)
@@ -86,6 +112,10 @@ class JSONCDict(dict):
         return t
 
     def get_diff_changes(self, diff):
+        """
+        Get the lines of format @@ -a,b +c,d @@ as a list
+        of form (a, b, c, d)
+        """
         p = diff.splitlines(True)
         i = 0
         (midx,sign) = (1,'+')
@@ -108,6 +138,10 @@ class JSONCDict(dict):
         return diff_changes
 
     def merge_diff(self, d1, d2):
+        """
+        Shift where the edits should happen based on how another diff
+        file has changed the original one
+        """
         d1_changes = self.get_diff_changes(d1)
         old_d2_changes = self.get_diff_changes(d2)
         new_d2_changes = self.get_diff_changes(d2)
@@ -144,6 +178,10 @@ class JSONCDict(dict):
         return d2
 
     def rebuild_change_str(self, change):
+        """
+        Take a list of form (a, b, c, d) and turn it into
+        @@ -a,b +c,d @@
+        """
         if change[1] != 1:
             part_1 = '{},{}'.format(change[0], change[1])
         else:
@@ -158,16 +196,22 @@ class JSONCDict(dict):
 
 
 def load(stream):
+    """
+    Initialize a JSONCDict from a file
+    """
     data = stream.read()
     return loads(data)
 
 def loads(text):
+    """
+    Initialize a JSONCDict from a string
+    """
     inline_pattern = re.compile(r'(?:^|[ \t])+\/\/(.*)', re.MULTILINE)
     multiline_pattern = re.compile(r'(?:^|[ \t])+\/\*(((?!\/\*).)|\n|\r)*\*\/')
 
     no_comments = re.sub(inline_pattern, '', text)
     no_comments = re.sub(multiline_pattern, '', no_comments)
-
+    # get the "without comments" version of the data
     json_obj = json.loads(no_comments)
 
     dict_obj = JSONCDict(**json_obj)
@@ -175,14 +219,17 @@ def loads(text):
     dict_obj.with_comments = text
     dict_obj.comment_diff = dict_obj.make_patch(dict_obj.without_comments, text)
 
-    with open('comment_diff.txt', 'w') as f:
-        f.write(dict_obj.comment_diff)
-
     return dict_obj
 
 def dumps(data):
+    """
+    Write the JSONCDict to a string
+    """
     return data.with_comments
 
 def dump(data, stream):
+    """
+    Write the JSONCDict to a file
+    """
     text = dumps(data, indent=4)
     stream.write(text)
