@@ -4,9 +4,21 @@ import urllib.parse
 import difflib
 
 __version__ = '0.0.4'
+INDENT=4
 
 _hdr_pat = re.compile("^@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@$")
 _no_eol = "\ No newline at end of file"
+
+inline_patterns = [
+    '(?:^|[ \t])+\/\/(.*)',
+    '(?:^|[ \t])+#(.*)',
+    '(?:^|[ \t])+;(.*)'
+]
+
+block_patterns = [
+    '(?:^|[ \t])+\/\*(((?!\/\*).)|\n|\r)*\*\/',
+    '(?:^|[ \t])+<!--(((?!<!--).)|\n|\r)*-->'
+]
 
 class JSONCDict(dict):
     def __init__(self, *args, **kwargs):
@@ -53,7 +65,7 @@ class JSONCDict(dict):
         so that the comments don't get out of sync with where they should be
         """
         data = {key: self[key] for key in self}
-        new_without_comments = json.dumps(data, indent=4)
+        new_without_comments = json.dumps(data, indent=INDENT)
         # get the changes for the text without comments
         diff = self.make_patch(new_without_comments, self.without_comments)
         # adjust the diff for applying comments to reflect how the json has changed
@@ -206,16 +218,19 @@ def loads(text):
     """
     Initialize a JSONCDict from a string
     """
-    inline_pattern = re.compile(r'(?:^|[ \t])+\/\/(.*)', re.MULTILINE)
-    multiline_pattern = re.compile(r'(?:^|[ \t])+\/\*(((?!\/\*).)|\n|\r)*\*\/')
+    # inline_pattern = re.compile(r'(?:^|[ \t])+\/\/(.*)', re.MULTILINE)
+    # multiline_pattern = re.compile(r'(?:^|[ \t])+\/\*(((?!\/\*).)|\n|\r)*\*\/')
 
-    no_comments = re.sub(inline_pattern, '', text)
-    no_comments = re.sub(multiline_pattern, '', no_comments)
+    no_comments = text
+    for inline_pattern in inline_patterns:
+        no_comments = re.sub(inline_pattern, '', no_comments, re.MULTILINE)
+    for block_pattern in block_patterns:
+        no_comments = re.sub(block_pattern, '', no_comments)
     # get the "without comments" version of the data
     json_obj = json.loads(no_comments)
 
     dict_obj = JSONCDict(**json_obj)
-    dict_obj.without_comments = json.dumps(json_obj, indent=4)
+    dict_obj.without_comments = json.dumps(json_obj, indent=INDENT)
     dict_obj.with_comments = text
     dict_obj.comment_diff = dict_obj.make_patch(dict_obj.without_comments, text)
 
@@ -231,5 +246,5 @@ def dump(data, stream):
     """
     Write the JSONCDict to a file
     """
-    text = dumps(data, indent=4)
+    text = dumps(data)
     stream.write(text)

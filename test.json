@@ -1,0 +1,13 @@
+{
+    "translator": {
+        "oauth": {
+            "AUTH_AUTHORIZATION_URI": "https://localhost:9031/as/authorization.oauth2",
+            "AUTH_INTROSPECTION_URI": "https://pingfederate:9031/as/introspect.oauth2",
+            "AUTH_ISSUER_URI": "https://pingfederate:9031",
+            "AUTH_JWK_SET_URI": "https://pingfederate:9031/pf/JWKS",
+            "AUTH_JWT_ISSUER_URI": "http://uaa:9090/uaa/oauth/token",
+            "AUTH_TOKEN_URI": "https://pingfederate:9031/as/token.oauth2",
+            "AUTH_USER_INFO_URI": "https://pingfederate:9031/idp/userinfo.openid"
+        }
+    }
+}
