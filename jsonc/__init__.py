@@ -3,7 +3,7 @@ import re
 import urllib.parse
 import difflib
 
-__version__ = '0.0.5'
+__version__ = '0.0.6'
 
 _hdr_pat = re.compile("^@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@$")
 _no_eol = "\ No newline at end of file"
