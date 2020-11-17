@@ -224,9 +224,10 @@ def loads(text):
 
     no_comments = text
     for inline_pattern in inline_patterns:
-        no_comments = re.sub(inline_pattern, '', no_comments, re.MULTILINE)
+        no_comments = re.sub(inline_pattern, '', no_comments)
     for block_pattern in block_patterns:
         no_comments = re.sub(block_pattern, '', no_comments)
+
     # get the "without comments" version of the data
     json_obj = json.loads(no_comments)
 

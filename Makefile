@@ -10,6 +10,7 @@ bump-patch:
 	bumpversion patch jsonc/VERSION
 
 pypi-build:
+	rm -rf dist/*
 	python setup.py sdist bdist_wheel
 	twine check dist/*
 
