@@ -13,8 +13,8 @@ You can then use the four functions below to interact with your jsonc file and d
 ```
 jsonc.load(file)
 jsonc.loads(str)
-jsonc.dump(JSONCDict)
-jsonc.dumps(JSONCDict, file)
+jsonc.dumps(JSONCDict)
+jsonc.dump(JSONCDict, file)
 ```
 
 In addition, you can accesss the raw JSON string without comments by using
