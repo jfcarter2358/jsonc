@@ -1,25 +1,68 @@
+'''
+def load(stream):
+    data = stream.read()
+    return loads(data)
+
+def loads(text):
+    lines = text.split('\n')
+    lines = [l for l in lines if not len(l.strip()) == 0]
+
+    comment_start_pattern = re.compile(r'\s//.*')
+    comment_replace_pattern = re.compile(r'//\s*')
+
+    for i in range(1, len(lines) - 1):
+        l = lines[i]
+        if re.search(comment_start_pattern, l):
+            l = re.sub(comment_replace_pattern, '".comment_{}": "'.format(str(uuid.uuid4())), l, count=1)
+            l = l + '"'
+        lines[i] = l
+    for i in range(1, len(lines) - 2):
+        l = lines[i]
+        l_next = lines[i + 1]
+        l_strip = l.strip()
+        if not l_strip.endswith(',') and not l_strip.endswith('{') and not l_strip.endswith('['):
+            if l_next.strip().startswith('"'):
+                l = l + ','
+        lines[i] = l
+
+    text = '\n'.join(lines)
+    data = json.loads(text)
+
+    return data
+
+def dumps(data, indent=4):
+    comment_start_pattern = re.compile(r'\"\.comment_[0-9]*\"\s*:\s*"')
+    comment_end_pattern = re.compile(r'",?\s*$')
+    end_comma_pattern = re.compile(r',\n(\s*//.*\n)*(\s*\}|\s*\])')
+
+    text = json.dumps(data, indent=indent)
+    lines = text.split('\n')
+    for i in range(1, len(lines) - 1):
+        l = lines[i]
+        if re.search(comment_start_pattern, l):
+            l = re.sub(comment_start_pattern, '// ', l)
+            l = re.sub(comment_end_pattern, '', l)
+            lines[i] = l
+
+    text = '\n'.join(lines)
+
+    m = re.search(end_comma_pattern, text)
+    if m:
+        text = text[:m.start()] + ' ' + text[m.start() + 1:]
+
+    return text
+
+def dump(data, stream, indent=4):
+    text = dumps(data, indent=indent)
+    stream.write(text)
+'''
+
 import json
 import re
-import urllib.parse
-import difflib
+import uuid
+import copy
 
-__version__ = '0.0.6'
-
-_hdr_pat = re.compile("^@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@$")
-_no_eol = "\ No newline at end of file"
-
-inline_patterns = [
-    '(?:^|[ \t])+\/\/(.*)',
-    '(?:^|[ \t])+#(.*)',
-    '(?:^|[ \t])+;(.*)'
-]
-
-block_patterns = [
-    '(?:^|[ \t])+\/\*(((?!\/\*).)|\n|\r)*\*\/',
-    '(?:^|[ \t])+"""(((?!""").)|\n|\r)*"""',
-    '(?:^|[ \t])+\'\'\'(((?!\'\'\').)|\n|\r)*\'\'\'',
-    '(?:^|[ \t])+<!--(((?!<!--).)|\n|\r)*-->'
-]
+__version__ = '1.0.0'
 
 class JSONCDict(dict):
     def __init__(self, *args, **kwargs):
@@ -28,185 +71,30 @@ class JSONCDict(dict):
         """
         super(JSONCDict, self).__init__(*args, **kwargs)
         # create the variables that we'll use to deal with the comments
-        self.with_comments = ''
-        self.without_comments = ''
-        self.comment_diff = ''
+        self.with_comments = {}
 
     def __setitem__(self, key, value):
+        print('SET ITEM')
         """
         Set an item in the dictionary
         """
         super(JSONCDict, self).__setitem__(key, value)
-        # refresh the diff along with the internal string representations
-        # of the dictionary
-        self.refresh()
+        # add the value to the with comments dictionary
+        self.with_comments.__setitem__(key, value)
 
     def __delitem__(self, key):
         """
         Delete an item from the dictionary
         """
         super(JSONCDict, self).__delitem__(key)
-        # refresh the diff along with the internal string representations
-        # of the dictionary
-        self.refresh()
 
-    def clear():
+    def clear(self):
         """
         Clear the dictioanry
         """
         super(JSONCDict, self).clear()
         # clear the internal variables
-        self.without_comments = '{}'
-        self.with_comments = '{}'
-        self.comment_diff = ''
-
-    def refresh(self):
-        """
-        Apply the diff for what has changed every time an update is made
-        so that the comments don't get out of sync with where they should be
-        """
-        data = {key: self[key] for key in self}
-        new_without_comments = json.dumps(data, indent=4)
-        # get the changes for the text without comments
-        diff = self.make_patch(new_without_comments, self.without_comments)
-        # adjust the diff for applying comments to reflect how the json has changed
-        merged_diff = self.merge_diff(diff, self.comment_diff)
-        # apply the comments
-        new_with_comments = self.apply_patch(new_without_comments, merged_diff)
-        # update the variables
-        self.without_comments = new_without_comments
-        self.with_comments = new_with_comments
-        self.comment_diff = self.make_patch(self.without_comments, new_with_comments)
-
-    def make_patch(self, a, b):
-        """
-        Get unified string diff between two strings. Trims top two lines.
-        Returns empty string if strings are identical.
-        """
-        diffs = difflib.unified_diff(a.splitlines(True), b.splitlines(True), n=0)
-        try: 
-            _,_ = next(diffs), next(diffs)
-        except StopIteration: 
-            pass
-        return ''.join([d if d[-1] == '\n' else d + '\n' + _no_eol + '\n' for d in diffs])
-
-    def apply_patch(self, s, patch, revert=False):
-        """
-        Apply unified diff patch to string s to recover newer string.
-        If revert is True, treat s as the newer string, recover older string.
-        """
-        s = s.splitlines(True)
-        p = patch.splitlines(True)
-        t = ''
-        i = sl = 0
-        (midx,sign) = (1,'+') if not revert else (3,'-')
-        while i < len(p) and p[i].startswith(("---","+++")): 
-            i += 1 # skip header lines
-        while i < len(p):
-            m = _hdr_pat.match(p[i])
-            if not m: 
-                raise Exception("Cannot process diff")
-            i += 1
-            l = int(m.group(midx)) - 1 + (m.group(midx+1) == '0')
-            t += ''.join(s[sl:l])
-            sl = l
-            while i < len(p) and p[i][0] != '@':
-                if i+1 < len(p) and p[i+1][0] == '\\': 
-                    line = p[i][:-1]
-                    i += 2
-                else: 
-                    line = p[i]
-                    i += 1
-                if len(line) > 0:
-                    if line[0] == sign or line[0] == ' ': 
-                        t += line[1:]
-                    sl += (line[0] != sign)
-        t += ''.join(s[sl:])
-        return t
-
-    def get_diff_changes(self, diff):
-        """
-        Get the lines of format @@ -a,b +c,d @@ as a list
-        of form (a, b, c, d)
-        """
-        p = diff.splitlines(True)
-        i = 0
-        (midx,sign) = (1,'+')
-        diff_changes = []
-        while i < len(p) and p[i].startswith(("---","+++")): i += 1 # skip header lines
-        while i < len(p):
-            m = _hdr_pat.match(p[i])
-            if not m: 
-                raise Exception("Cannot process diff")
-            i += 1
-            diff_changes.append(list(m.groups()))
-            while i < len(p) and p[i][0] != '@':
-                if i+1 < len(p) and p[i+1][0] == '\\': 
-                    line = p[i][:-1]
-                    i += 2
-                else: 
-                    line = p[i]
-                    i += 1
-
-        return diff_changes
-
-    def merge_diff(self, d1, d2):
-        """
-        Shift where the edits should happen based on how another diff
-        file has changed the original one
-        """
-        d1_changes = self.get_diff_changes(d1)
-        old_d2_changes = self.get_diff_changes(d2)
-        new_d2_changes = self.get_diff_changes(d2)
-
-        for i in range(0, len(d1_changes)):
-            for j in range(0, 4):
-                if d1_changes[i][j] == None:
-                    d1_changes[i][j] = 1
-        for i in range(0, len(new_d2_changes)):
-            for j in range(0, 4):
-                if old_d2_changes[i][j] == None:
-                    old_d2_changes[i][j] = 1
-                if new_d2_changes[i][j] == None:
-                    new_d2_changes[i][j] = 1
-
-        for i in range(0, len(d1_changes)):
-            for j in range(0, len(new_d2_changes)):
-                if d1_changes[i][0] < new_d2_changes[j][0]:
-                    if d1_changes[i][3] != None and d1_changes[i][1] != None:
-                        new_d2_changes[j][2] = str(int(new_d2_changes[j][2]) + int(d1_changes[i][1]) - int(d1_changes[i][3]))
-                        new_d2_changes[j][0] = str(int(new_d2_changes[j][0]) + int(d1_changes[i][1]) - int(d1_changes[i][3]))
-
-        old_change_strings = []
-        new_change_strings = []
-
-        for change in old_d2_changes:
-            old_change_strings.append(self.rebuild_change_str(change))
-        for change in new_d2_changes:
-            new_change_strings.append(self.rebuild_change_str(change))
-            
-        for i in range(0, len(new_change_strings)):
-            d2 = d2.replace(old_change_strings[i], new_change_strings[i])
-
-        return d2
-
-    def rebuild_change_str(self, change):
-        """
-        Take a list of form (a, b, c, d) and turn it into
-        @@ -a,b +c,d @@
-        """
-        if change[1] != 1:
-            part_1 = '{},{}'.format(change[0], change[1])
-        else:
-            part_1 = change[0]
-        if change[3] != 1:
-            part_2 = '{},{}'.format(change[2], change[3])
-        else:
-            part_2 = change[2]
-
-        out = '@@ -{} +{} @@'.format(part_1, part_2)
-        return out
-
+        self.without_comments = {}
 
 def load(stream):
     """
@@ -222,19 +110,78 @@ def loads(text):
     # inline_pattern = re.compile(r'(?:^|[ \t])+\/\/(.*)', re.MULTILINE)
     # multiline_pattern = re.compile(r'(?:^|[ \t])+\/\*(((?!\/\*).)|\n|\r)*\*\/')
 
-    no_comments = text
-    for inline_pattern in inline_patterns:
-        no_comments = re.sub(inline_pattern, '', no_comments)
-    for block_pattern in block_patterns:
-        no_comments = re.sub(block_pattern, '', no_comments)
+    lines = text.split('\n')
+    lines = [l for l in lines if not len(l.strip()) == 0]
 
-    # get the "without comments" version of the data
-    json_obj = json.loads(no_comments)
+    single_line_patterns = {
+        'c': '(?:^|[ \t])+\/\/(.*)',
+        'python': '(?:^|[ \t])+#(.*)'
+    }
 
-    dict_obj = JSONCDict(**json_obj)
-    dict_obj.without_comments = json.dumps(json_obj, indent=4)
-    dict_obj.with_comments = text
-    dict_obj.comment_diff = dict_obj.make_patch(dict_obj.without_comments, text)
+    inline_patterns = {
+        'c': '((?:^|[ \t])[^ \t\n]+[ \t]*)\/\/(.*)',
+        'python': '((?:^|[ \t])[^ \t\n]+[ \t]*)#(.*)'
+    }
+
+    # block comments are not yet supported
+    '''
+    block_patterns = {
+        'c': '(?:^|[ \t])+\/\*(((?!\/\*).)|\n|\r)*\*\/',
+        'python_double': '(?:^|[ \t])+"""(((?!""").)|\n|\r)*"""',
+        'python_single': '(?:^|[ \t])+\'\'\'(((?!\'\'\').)|\n|\r)*\'\'\'',
+        'html': '(?:^|[ \t])+<!--(((?!<!--).)|\n|\r)*-->'
+    }
+    '''
+
+    list_start_pattern = r'\[(?=([^"\\]*(\\.|"([^"\\]*\\.)*[^"\\]*"))*[^"]*$)'
+    list_end_pattern = r'\](?=([^"\\]*(\\.|"([^"\\]*\\.)*[^"\\]*"))*[^"]*$)'
+    map_start_pattern = r'\{(?=([^"\\]*(\\.|"([^"\\]*\\.)*[^"\\]*"))*[^"]*$)'
+    map_end_pattern = r'\}(?=([^"\\]*(\\.|"([^"\\]*\\.)*[^"\\]*"))*[^"]*$)'
+
+    list_count = 0
+    map_count = 1
+
+    for i in range(1, len(lines) - 1):
+        l = lines[i]
+
+        if re.search(list_start_pattern, l):
+            list_count += 1
+        if re.search(list_end_pattern, l):
+            list_count -= 1
+        if re.search(map_start_pattern, l):
+            map_count += 1
+        if re.search(map_end_pattern, l):
+            map_count -= 1
+
+        for k in inline_patterns:
+            if re.search(inline_patterns[k], l):
+                if map_count > list_count:
+                    l = re.sub(inline_patterns[k], '\\1\n".jsonc_inline_{}_comment_{}": "\\2"'.format(k, str(uuid.uuid4())), l, count=1)
+                else:
+                    l = re.sub(inline_patterns[k], '\\1\n".jsonc_inline_{}_comment_{}: \\2"'.format(k, str(uuid.uuid4())), l, count=1)
+        for k in single_line_patterns:
+            if re.search(single_line_patterns[k], l):
+                if map_count > list_count:
+                    l = re.sub(single_line_patterns[k], '".jsonc_{}_comment_{}": "\\1"'.format(k, str(uuid.uuid4())), l, count=1)
+                else:
+                    l = re.sub(single_line_patterns[k], '".jsonc_{}_comment_{}: \\1"'.format(k, str(uuid.uuid4())), l, count=1)
+        lines[i] = l
+    lines = '\n'.join(lines).split('\n')
+    for i in range(1, len(lines) - 2):
+        l = lines[i]
+        l_next = lines[i + 1]
+        l_strip = l.strip()
+        if not l_strip.endswith(',') and not l_strip.endswith('{') and not l_strip.endswith('['):
+            if l_next.strip().startswith('"'):
+                l = l + ','
+        lines[i] = l
+
+    text = '\n'.join(lines)
+    data = json.loads(text)
+    without_comments = clean_comments(copy.deepcopy(data))
+
+    dict_obj = JSONCDict(**without_comments)
+    dict_obj.with_comments = data
 
     return dict_obj
 
@@ -246,17 +193,42 @@ def dumps(data, indent=4, comments=True):
         err = ValueError('Indent value must be greater or equal to 1')
         raise err
     if comments:
-        lines = data.with_comments.split('\n')
+        text = json.dumps(data.with_comments, indent=indent)
     else:
-        lines = data.without_comments.split('\n')
-    for i in range(0, len(lines)):
-        line_strip = lines[i].lstrip()
-        space_count = len(lines[i]) - len(line_strip)
-        indent_level = space_count / 4
-        space_count = int(indent_level * indent)
-        lines[i] = ' ' * space_count + line_strip
+        text = json.dumps(data, indent=indent)
 
-    return '\n'.join(lines)
+    # replace single-line c-style comments that are in a map
+    text = re.sub(r'"\.jsonc_c_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}"\: "(.*)",?', '//\\1', text)
+    # replace single-line python-style comments that are in a map
+    text = re.sub(r'"\.jsonc_python_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}"\: "(.*)",?', '#\\1', text)
+    # replace single-line c-style comments that are in a list
+    text = re.sub(r'"\.jsonc_c_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}\: (.*)",?', '//\\1', text)
+    # replace single-line python-style comments that are in a lit
+    text = re.sub(r'"\.jsonc_python_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}\: (.*)",?', '#\\1', text)
+    
+    # replace inline c-style comments that are in a map
+    text = re.sub(r'\n\s*"\.jsonc_inline_c_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}"\: "(.*)",?', ' //\\1', text)
+    # replace inline python-style comments that are in a map
+    text = re.sub(r'\n\s*"\.jsonc_inline_python_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}"\: "(.*)",?', ' #\\1', text)
+    # replace inline c-style comments that are in a list
+    text = re.sub(r'\n\s*"\.jsonc_inline_c_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}\: (.*)",?', ' //\\1', text)
+    # replace inline python-style comments that are in a list
+    text = re.sub(r'\n\s*"\.jsonc_inline_python_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}\: (.*)",?', ' #\\1', text)
+    
+    lines = text.split('\n')
+    for i in range(1, len(lines) - 2):
+        l = lines[i]
+        l_next = lines[i + 1]
+        match = re.search(r'(.*)((?://|#).*)', l)
+        if match:
+            if l_next.strip().startswith('}') or l_next.strip().startswith(']'):
+                if match.group(1).rstrip().endswith(','):
+                    parts = match.group(1).split(',')
+                    lines[i] = ','.join(parts[:-1]) + parts[-1] + match.group(2)
+    
+    text = '\n'.join(lines)
+
+    return text
 
 def dump(data, stream, indent=4, comments=True):
     """
@@ -264,3 +236,50 @@ def dump(data, stream, indent=4, comments=True):
     """
     text = dumps(data, indent=indent, comments=comments)
     stream.write(text)
+
+def clean_comments(data):
+    if type(data) == dict:
+        data = JSONCDict(**{k:clean_comments(data[k]) for k in data if not k.startswith('.jsonc_')})
+    elif type(data) == list:
+        temp = []
+        for x in data:
+            if type(x) == str:
+                if x.startswith('.jsonc_'): continue
+            temp.append(clean_comments(x))
+        data = temp
+    return data
+
+if __name__ == '__main__':
+    data = '''
+{
+    # here we want to use Python-style comments
+    # here we want to handle quotes in our comments
+    "hello": "world"
+    "foo": [
+        "a",
+        // this is a c comment in a list
+        "b",
+		  {
+		  	"a": "b"
+		  }, {
+		  	"c": "{this is a test}"
+		  }
+    ],
+    "bar": {
+        "a": "b",
+        // a c comment
+        "d": "e"
+        // another c comment
+		  "f": 9,
+		  "g": []
+		  "h" : {} // this is an inline comment
+    }
+    // oh and here's a random comment after a blank line
+    // here we want to use C-style comments
+}
+    '''
+
+obj = loads(data)
+print(type(obj['bar']))
+obj['bar']['foo'] = 'I hope this works'
+print(dumps(obj))
