@@ -2,6 +2,7 @@ import jsonc
 
 with open('test/test.in.jsonc') as f:
     data = jsonc.load(f)
+data['bar']['h'] = 'foo'
 
 with open('test/test.out.json', 'w') as f:
     jsonc.dump(data, f, indent=2, comments=False)

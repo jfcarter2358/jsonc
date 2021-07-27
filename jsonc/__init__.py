@@ -65,13 +65,14 @@ import copy
 __version__ = '1.0.0'
 
 class JSONCDict(dict):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, parent=None, key=None, *args, **kwargs):
         """
         Initialize the dictionary
         """
         super(JSONCDict, self).__init__(*args, **kwargs)
         # create the variables that we'll use to deal with the comments
         self.with_comments = {}
+        self.parent = parent
 
     def __setitem__(self, key, value):
         print('SET ITEM')
@@ -80,13 +81,39 @@ class JSONCDict(dict):
         """
         super(JSONCDict, self).__setitem__(key, value)
         # add the value to the with comments dictionary
-        self.with_comments.__setitem__(key, value)
+
+        # handle if a dictionary was handed back
+        if type(value) == JSONCDict:
+            self.with_comments.__setitem__(key, value.with_comments)
+        else:
+            self.with_comments.__setitem__(key, value)
+
+        if self.parent != None:
+            self.parent.__setitem__(self.key, self)
 
     def __delitem__(self, key):
         """
         Delete an item from the dictionary
         """
         super(JSONCDict, self).__delitem__(key)
+
+    def __getitem__(self, key):
+        """
+        Get an item from the dictionary
+        """
+        out = super(JSONCDict, self).__getitem__(key)
+        # handle dictionaries being passed without changes being reflected back in the JSONCDict
+        if type(out) == dict:
+            out = JSONCDict(out, parent=self, key=key)
+            out.with_comments = self.with_comments.__getitem__(key)
+            return out
+        elif type(out) == JSONCDict:
+            out.parent = self
+            out.key = key
+            out.with_comments = self.with_comments.__getitem__(key)
+            return out
+        else:
+            return out
 
     def clear(self):
         """
@@ -95,7 +122,7 @@ class JSONCDict(dict):
         super(JSONCDict, self).clear()
         # clear the internal variables
         self.without_comments = {}
-
+        
 def load(stream):
     """
     Initialize a JSONCDict from a file
@@ -254,32 +281,32 @@ if __name__ == '__main__':
 {
     # here we want to use Python-style comments
     # here we want to handle quotes in our comments
-    "hello": "world"
+    "hello": "world",
     "foo": [
         "a",
         // this is a c comment in a list
         "b",
-		  {
-		  	"a": "b"
-		  }, {
-		  	"c": "{this is a test}"
-		  }
+        {
+            "a": "b"
+        }, {
+            "c": "this is a test"
+        }
     ],
     "bar": {
         "a": "b",
         // a c comment
-        "d": "e"
+        "d": "e",
         // another c comment
-		  "f": 9,
-		  "g": []
-		  "h" : {} // this is an inline comment
+        "f": 9,
+        "g": [],
+        "h" : {} // this is an inline comment
     }
     // oh and here's a random comment after a blank line
     // here we want to use C-style comments
 }
     '''
 
-obj = loads(data)
-print(type(obj['bar']))
-obj['bar']['foo'] = 'I hope this works'
-print(dumps(obj))
+    obj = loads(data)
+    print(type(obj['bar']))
+    obj['bar']['foo'] = 'I hope this works'
+    print(dumps(obj))
