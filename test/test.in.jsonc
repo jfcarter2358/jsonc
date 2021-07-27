@@ -1,4 +1,5 @@
 {
+    # this is another test comment
     "hello": "world",
     "foo": [
         "a",
@@ -9,6 +10,7 @@
         }, {
             "c": "{this is a test}"
         }
+        // here is another comment in a list
     ],
     "bar": {
         "a": "b",

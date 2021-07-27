@@ -1,66 +1,8 @@
-'''
-def load(stream):
-    data = stream.read()
-    return loads(data)
-
-def loads(text):
-    lines = text.split('\n')
-    lines = [l for l in lines if not len(l.strip()) == 0]
-
-    comment_start_pattern = re.compile(r'\s//.*')
-    comment_replace_pattern = re.compile(r'//\s*')
-
-    for i in range(1, len(lines) - 1):
-        l = lines[i]
-        if re.search(comment_start_pattern, l):
-            l = re.sub(comment_replace_pattern, '".comment_{}": "'.format(str(uuid.uuid4())), l, count=1)
-            l = l + '"'
-        lines[i] = l
-    for i in range(1, len(lines) - 2):
-        l = lines[i]
-        l_next = lines[i + 1]
-        l_strip = l.strip()
-        if not l_strip.endswith(',') and not l_strip.endswith('{') and not l_strip.endswith('['):
-            if l_next.strip().startswith('"'):
-                l = l + ','
-        lines[i] = l
-
-    text = '\n'.join(lines)
-    data = json.loads(text)
-
-    return data
-
-def dumps(data, indent=4):
-    comment_start_pattern = re.compile(r'\"\.comment_[0-9]*\"\s*:\s*"')
-    comment_end_pattern = re.compile(r'",?\s*$')
-    end_comma_pattern = re.compile(r',\n(\s*//.*\n)*(\s*\}|\s*\])')
-
-    text = json.dumps(data, indent=indent)
-    lines = text.split('\n')
-    for i in range(1, len(lines) - 1):
-        l = lines[i]
-        if re.search(comment_start_pattern, l):
-            l = re.sub(comment_start_pattern, '// ', l)
-            l = re.sub(comment_end_pattern, '', l)
-            lines[i] = l
-
-    text = '\n'.join(lines)
-
-    m = re.search(end_comma_pattern, text)
-    if m:
-        text = text[:m.start()] + ' ' + text[m.start() + 1:]
-
-    return text
-
-def dump(data, stream, indent=4):
-    text = dumps(data, indent=indent)
-    stream.write(text)
-'''
-
 import json
 import re
 import uuid
 import copy
+import collections
 
 __version__ = '1.0.0'
 
@@ -73,9 +15,9 @@ class JSONCDict(dict):
         # create the variables that we'll use to deal with the comments
         self.with_comments = {}
         self.parent = parent
+        self.key = key
 
     def __setitem__(self, key, value):
-        print('SET ITEM')
         """
         Set an item in the dictionary
         """
@@ -83,7 +25,7 @@ class JSONCDict(dict):
         # add the value to the with comments dictionary
 
         # handle if a dictionary was handed back
-        if type(value) == JSONCDict:
+        if type(value) == JSONCDict or type(value) == JSONCList:
             self.with_comments.__setitem__(key, value.with_comments)
         else:
             self.with_comments.__setitem__(key, value)
@@ -104,10 +46,19 @@ class JSONCDict(dict):
         out = super(JSONCDict, self).__getitem__(key)
         # handle dictionaries being passed without changes being reflected back in the JSONCDict
         if type(out) == dict:
-            out = JSONCDict(out, parent=self, key=key)
+            out = JSONCDict(data=out, parent=self, key=key)
+            out.with_comments = self.with_comments.__getitem__(key)
+            return out
+        elif type(out) == list:
+            out = JSONCList(data=out)
             out.with_comments = self.with_comments.__getitem__(key)
             return out
         elif type(out) == JSONCDict:
+            out.parent = self
+            out.key = key
+            out.with_comments = self.with_comments.__getitem__(key)
+            return out
+        elif type(out) == JSONCList:
             out.parent = self
             out.key = key
             out.with_comments = self.with_comments.__getitem__(key)
@@ -117,11 +68,98 @@ class JSONCDict(dict):
 
     def clear(self):
         """
-        Clear the dictioanry
+        Clear the dictionary
         """
         super(JSONCDict, self).clear()
         # clear the internal variables
-        self.without_comments = {}
+        self.with_comments = {}
+
+def indexing_decorator(func):
+
+    def decorated(self, index, *args):
+        return func(self, index, *args)
+
+    return decorated
+
+class JSONCList(collections.MutableSequence):
+    def __init__(self, data=[], parent=None, key=None):
+        self._inner_list = data
+        self.with_comments = []
+        self.parent = parent
+        self.key = key
+
+    def __len__(self):
+        return len(self._inner_list)
+
+    @indexing_decorator
+    def __delitem__(self, index):
+        self._inner_list.__delitem__(index)
+        self.with_comments.__delitem__(self.find_comment_index(index))
+
+    @indexing_decorator
+    def insert(self, index, value):
+        self._inner_list.insert(index, value)
+        self.with_comments.insert(self.find_comment_index(index), value)
+
+    @indexing_decorator
+    def __setitem__(self, index, value):
+        self._inner_list.__setitem__(index, value)
+
+        if type(value) == JSONCDict or type(value) == JSONCList:
+            self.with_comments.__setitem__(self.find_comment_index(index), value.with_comments)
+        else:
+            self.with_comments.__setitem__(self.find_comment_index(index), value)
+
+        if self.parent != None:
+            self.parent.__setitem__(self.key, self)
+
+    @indexing_decorator
+    def __getitem__(self, index):
+        out = self._inner_list.__getitem__(index)
+
+        if type(out) == dict:
+            out = JSONCDict(data=out, parent=self, key=index)
+            out.with_comments = self.with_comments.__getitem__(self.find_comment_index(index))
+            return out
+        elif type(out) == list:
+            out = JSONCList(data=out)
+            out.with_comments = self.with_comments.__getitem__(self.find_comment_index(index))
+            return out
+        elif type(out) == JSONCDict:
+            out.parent = self
+            out.key = index
+            out.with_comments = self.with_comments.__getitem__(self.find_comment_index(index))
+            return out
+        elif type(out) == JSONCList:
+            out.parent = self
+            out.key = index
+            out.with_comments = self.with_comments.__getitem__(self.find_comment_index(index))
+            return out
+        else:
+            return out
+
+    def append(self, value):
+        self.insert(len(self) + 1, value)
+
+    def __str__(self):
+        return str(self._inner_list)
+
+    def __repr__(self):
+        return str(self._inner_list)
+
+    def find_comment_index(self, index):
+        counter = 0
+        idx = 0
+        while idx < index:
+            if counter == len(self.with_comments):
+                return counter + 1
+            if type(self.with_comments[counter]) != str:
+                idx += 1
+            elif not self.with_comments[counter].startswith('.jsonc'):
+                idx += 1
+            counter += 1
+        return counter
+            
         
 def load(stream):
     """
@@ -275,38 +313,3 @@ def clean_comments(data):
             temp.append(clean_comments(x))
         data = temp
     return data
-
-if __name__ == '__main__':
-    data = '''
-{
-    # here we want to use Python-style comments
-    # here we want to handle quotes in our comments
-    "hello": "world",
-    "foo": [
-        "a",
-        // this is a c comment in a list
-        "b",
-        {
-            "a": "b"
-        }, {
-            "c": "this is a test"
-        }
-    ],
-    "bar": {
-        "a": "b",
-        // a c comment
-        "d": "e",
-        // another c comment
-        "f": 9,
-        "g": [],
-        "h" : {} // this is an inline comment
-    }
-    // oh and here's a random comment after a blank line
-    // here we want to use C-style comments
-}
-    '''
-
-    obj = loads(data)
-    print(type(obj['bar']))
-    obj['bar']['foo'] = 'I hope this works'
-    print(dumps(obj))
