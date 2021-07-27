@@ -17,14 +17,7 @@ jsonc.dumps(JSONCDict)
 jsonc.dump(JSONCDict, file)
 ```
 
-In addition, you can accesss the raw JSON string without comments by using
-
-```
-data_dict = JSONCDict()
-data_dict.without_comments
-```
-
-and you can access the string _with_ comments by using
+In addition, you can access the dictionary _with_ stored comments by using
 
 ```
 data_dict = JSONCDict()
