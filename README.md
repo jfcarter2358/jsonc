@@ -1,5 +1,11 @@
 # JSONC
 
+## Install
+
+```
+pip install jsoncparser
+```
+
 ## Getting Started
 
 To use JSONC, add the following import statement to your code
