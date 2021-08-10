@@ -4,7 +4,7 @@ import uuid
 import copy
 import collections
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 class JSONCDict(dict):
     def __init__(self, parent=None, key=None, *args, **kwargs):
