@@ -179,13 +179,13 @@ def loads(text):
     lines = [l for l in lines if not len(l.strip()) == 0]
 
     single_line_patterns = {
-        'c': '(?:^|[ \t])+\/\/(.*)',
-        'python': '(?:^|[ \t])+#(.*)'
+        'c': '(?:^|[ \t])+\/\/((?:[^"]*"[^"]")*[^"]*(?:$))',
+        'python': '(?:^|[ \t])+#((?:[^"]*"[^"]")*[^"]*(?:$))'
     }
 
     inline_patterns = {
-        'c': '((?:^|[ \t])[^ \t\n]+[ \t]*)\/\/(.*)',
-        'python': '((?:^|[ \t])[^ \t\n]+[ \t]*)#(.*)'
+        'c': '((?:^|[ \t])[^ \t\n]+[ \t]*)\/\/((?:[^"]*"[^"]")*[^"]*(?:$))',
+        'python': '((?:^|[ \t])[^ \t\n]+[ \t]*)#((?:[^"]*"[^"]")*[^"]*(?:$))'
     }
 
     # block comments are not yet supported
@@ -244,7 +244,7 @@ def loads(text):
     text = '\n'.join(lines)
     data = json.loads(text)
     without_comments = clean_comments(copy.deepcopy(data))
-
+    
     dict_obj = JSONCDict(**without_comments)
     dict_obj.with_comments = data
 

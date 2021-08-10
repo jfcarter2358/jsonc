@@ -19,6 +19,10 @@
         // another c comment
         "f": 9,
         "g": [],
-        "h" : {} // this is an inline comment 
+        "h" : {}, // this is an inline comment 
+        "i": "this is a // comment string inside a value", // this comment should be preserved
+        "j": "this is a # comment string inside a value" # this comment should also be preserved
+        "i//": "there were two slashes in the key this time", // this comment should be preserved 2
+        "j#": "there was a hash in the key this time" # this comment should be preserved electric boogaloo
     }
 }
