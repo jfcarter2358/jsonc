@@ -53,7 +53,7 @@ class JSONCDict(dict):
                 out[k] = data[k]
             return out
         if isinstance(data, list) or isinstance(data, JSONCList):
-            out = JSONCList()
+            out = []
             for i in range(0, len(data)):
                 if isinstance(data[i], dict) or isinstance(data[i], JSONCDict):
                     out.append(self.__restore_types__(data[i], dtypes[i]))
@@ -92,16 +92,16 @@ class JSONCDict(dict):
                 dtypes[k] = str(type(data[k]))
             return out, dtypes
         if isinstance(data, list) or isinstance(data, JSONCList):
-            out = JSONCList()
+            out = []
             dtypes = []
             for i in range(0, len(data)):
                 if isinstance(data[i], dict) or isinstance(data[i], JSONCDict):
-                    a, b = JSONCDict.fix_types(data[i], dtypes[i])
+                    a, b = JSONCDict.fix_types(data[i])
                     out.append(a)
                     dtypes.append(b)
                     continue
                 if isinstance(data[i], list) or isinstance(data[i], JSONCList):
-                    a, b = JSONCDict.fix_types(data[i], dtypes[i])
+                    a, b = JSONCDict.fix_types(data[i])
                     out.append(a)
                     dtypes.append(b)
                     continue
