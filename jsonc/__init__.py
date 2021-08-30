@@ -15,7 +15,7 @@ def _finditem(obj, key):
                 return item
 
 class JSONCDict(dict):
-    def __init__(self, parent=None, jsonc_key=None, *args, **kwargs):
+    def __init__(self, parent=None, jsonc_key=None, jsonc_dtypes=None, *args, **kwargs):
         """
         Initialize the dictionary
         """
@@ -25,6 +25,89 @@ class JSONCDict(dict):
         self.jsonc_with_comments = {}
         self.jsonc_parent = parent
         self.jsonc_key = jsonc_key
+        self.jsonc_dtypes = jsonc_dtypes
+
+    def __restore_types__(self, data=None, dtypes=None):
+        if data is None:
+            return data
+        if dtypes is None:
+            dtypes = {}
+        if isinstance(data, dict) or isinstance(data, JSONCDict):
+            out = JSONCDict()
+            for k in data:
+                if isinstance(data[k], dict) or isinstance(data[k], JSONCDict):
+                    out[k] = self.__restore_types__(data[k], dtypes[k])
+                    continue
+                if isinstance(data[k], list) or isinstance(data[k], JSONCList):
+                    out[k] = self.__restore_types__(data[k], dtypes[k])
+                    continue
+                if dtypes[k] == 'int':
+                    out[int(k)] = data[k]
+                    continue
+                if dtypes[k] == 'bool':
+                    out[bool(k)] = data[k]
+                    continue
+                if dtypes[k] == 'float':
+                    out[float(k)] = data[k]
+                    continue
+                out[k] = data[k]
+            return out
+        if isinstance(data, list) or isinstance(data, JSONCList):
+            out = JSONCList()
+            for i in range(0, len(data)):
+                if isinstance(data[i], dict) or isinstance(data[i], JSONCDict):
+                    out.append(self.__restore_types__(data[i], dtypes[i]))
+                    continue
+                if isinstance(data[i], list) or isinstance(data[i], JSONCList):
+                    out.append(self.__restore_types__(data[i], dtypes[i]))
+                    continue
+                out.append(data[i])
+            return out
+
+    @staticmethod
+    def fix_types(data):
+        if isinstance(data, dict) or isinstance(data, JSONCDict):
+            out = JSONCDict()
+            dtypes = {}
+            for k in data:
+                if isinstance(data[k], dict) or isinstance(data[k], JSONCDict):
+                    out[k], dtypes[k] = JSONCDict.fix_types(data[k])
+                    continue
+                if isinstance(data[k], list) or isinstance(data[k], JSONCList):
+                    out[k], dtypes[k] = JSONCDict.fix_types(data[k])
+                    continue
+                if type(k) == int:
+                    out[str(k)] = data[k]
+                    dtypes[str(k)] = 'int'
+                    continue
+                if type(k) == bool:
+                    out[str(k)] = data[k]
+                    dtypes[str(k)] = 'bool'
+                    continue
+                if type(k) == float:
+                    out[str(k)] = data[k]
+                    dtypes[str(k)] = 'float'
+                    continue
+                out[k] = data[k]
+                dtypes[k] = str(type(data[k]))
+            return out, dtypes
+        if isinstance(data, list) or isinstance(data, JSONCList):
+            out = JSONCList()
+            dtypes = []
+            for i in range(0, len(data)):
+                if isinstance(data[i], dict) or isinstance(data[i], JSONCDict):
+                    a, b = JSONCDict.fix_types(data[i], dtypes[i])
+                    out.append(a)
+                    dtypes.append(b)
+                    continue
+                if isinstance(data[i], list) or isinstance(data[i], JSONCList):
+                    a, b = JSONCDict.fix_types(data[i], dtypes[i])
+                    out.append(a)
+                    dtypes.append(b)
+                    continue
+                out.append(data[i])
+                dtypes.append('N/A')
+            return out, dtypes
 
     def __setitem__(self, key, value):
         """
@@ -60,7 +143,9 @@ class JSONCDict(dict):
         out = super(JSONCDict, self).__getitem__(key)
         # handle dictionaries being passed without changes being reflected back in the JSONCDict
         if type(out) == dict:
-            out = JSONCDict(data=out, parent=self, key=key)
+            out_fixed, out_dtypes = JSONCDict.fix_types(out)
+            out = JSONCDict(parent=self, jsonc_key=key, jsonc_dtypes=out_dtypes, **out_fixed)
+            out = self.__restore_types__(data=out, dtypes=out_dtypes)
             out.jsonc_with_comments = self.jsonc_with_comments.__getitem__(key)
             return out
         elif type(out) == list:
@@ -96,7 +181,9 @@ def indexing_decorator(func):
     return decorated
 
 class JSONCList(collections.MutableSequence):
-    def __init__(self, data=[], parent=None, key=None):
+    def __init__(self, data=None, parent=None, key=None):
+        if data is None:
+            data = []
         self._inner_list = data
         self.jsonc_with_comments = []
         self.jsonc_parent = parent
@@ -132,7 +219,7 @@ class JSONCList(collections.MutableSequence):
         out = self._inner_list.__getitem__(index)
 
         if type(out) == dict:
-            out = JSONCDict(data=out, parent=self, key=index)
+            out = JSONCDict(parent=self, jsonc_key=index, **out)
             out.jsonc_with_comments = self.jsonc_with_comments.__getitem__(self.find_comment_index(index))
             return out
         elif type(out) == list:
@@ -262,9 +349,11 @@ def loads(text):
         if re.search(f'"{key}"\s*:', text):
             raise KeyError(f'Key "{key}" in not allowed for a JSONCDict')
     data = json.loads(text)
+
     without_comments = clean_comments(copy.deepcopy(data))
 
-    dict_obj = JSONCDict(**without_comments)
+    without_comments_data, without_comments_dtypes = JSONCDict.fix_types(without_comments)
+    dict_obj = JSONCDict(jsonc_dtypes=without_comments_dtypes, **without_comments_data)
     dict_obj.jsonc_with_comments = data
 
     return dict_obj
@@ -323,7 +412,11 @@ def dump(data, stream, indent=4, comments=True):
 
 def clean_comments(data):
     if type(data) == dict:
-        data = JSONCDict(**{k:clean_comments(data[k]) for k in data if not k.startswith('.jsonc_')})
+        datum = {k:clean_comments(data[k]) for k in data if not k.startswith('.jsonc_')}
+        datum_fixed, datum_dtypes = JSONCDict.fix_types(datum)
+        with_comments = copy.deepcopy(data)
+        data = JSONCDict(jsonc_dtypes=datum_dtypes, **datum_fixed)
+        data.jsonc_with_comments = with_comments
     elif type(data) == list:
         temp = []
         for x in data:
