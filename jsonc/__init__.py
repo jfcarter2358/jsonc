@@ -180,7 +180,7 @@ def indexing_decorator(func):
 
     return decorated
 
-class JSONCList(collections.MutableSequence):
+class JSONCList(collections.abc.MutableSequence):
     def __init__(self, data=None, parent=None, key=None):
         if data is None:
             data = []
