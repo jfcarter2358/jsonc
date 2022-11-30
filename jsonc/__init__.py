@@ -4,7 +4,7 @@ import uuid
 import copy
 import collections
 
-__version__ = '1.0.1'
+__version__ = '1.1.0'
 
 def _finditem(obj, key):
     if key in obj: return obj[key]
@@ -261,6 +261,54 @@ class JSONCList(collections.abc.MutableSequence):
             counter += 1
         return counter
 
+def handle_block_newlines(text: str) -> str:
+    """
+    Replace newlines inside of block comments
+    """
+
+    look_behind = ''
+    look_ahead = ''
+    windows_replace_indices = []
+    linux_replace_indices = []
+    in_c_block_comment = False
+    for index, character in enumerate(text):
+        if index < len(text) - 1:
+            look_ahead = text[index + 1]
+        else:
+            look_ahead = ''
+        if character == '*' and look_behind == '/':
+            in_c_block_comment = True
+        elif character == '*' and look_ahead == '/':
+            in_c_block_comment = False
+        else:
+            if in_c_block_comment:
+                if character == '\n':
+                    if look_behind == '\r':
+                        windows_replace_indices.append(index-1)
+                    else:
+                        linux_replace_indices.append(index)
+        look_behind = character
+
+    windows_replace_indices.reverse()
+    linux_replace_indices.reverse()
+
+    while len(windows_replace_indices) > 0 or len(linux_replace_indices) > 0:
+        idx = 0
+        source = 'windows'
+        if len(windows_replace_indices) > 0:
+            idx = windows_replace_indices[0]
+        if len(linux_replace_indices) > 0:
+            if linux_replace_indices[0] > idx:
+                idx = linux_replace_indices[0]
+                source = 'linux'
+        if source == 'linux':
+            text = text[:idx] + '<JSONC_LINUX_NEWLINE>' + text[idx+1:]
+            linux_replace_indices.pop(0)
+        else:
+            text = text[:idx] + '<JSONC_WINDOWS_NEWLINE>' + text[idx+2:]
+            windows_replace_indices.pop(0)
+
+    return text
 
 def load(stream):
     """
@@ -273,8 +321,8 @@ def loads(text):
     """
     Initialize a JSONCDict from a string
     """
-    # inline_pattern = re.compile(r'(?:^|[ \t])+\/\/(.*)', re.MULTILINE)
-    # multiline_pattern = re.compile(r'(?:^|[ \t])+\/\*(((?!\/\*).)|\n|\r)*\*\/')
+    
+    text = handle_block_newlines(text)
 
     lines = text.split('\n')
     lines = [l for l in lines if not len(l.strip()) == 0]
@@ -289,15 +337,13 @@ def loads(text):
         'python': '((?:^|[ \t])[^ \t\n]+[ \t]*)#((?:[^"]*"[^"]")*[^"]*(?:$))'
     }
 
-    # block comments are not yet supported
-    '''
     block_patterns = {
-        'c': '(?:^|[ \t])+\/\*(((?!\/\*).)|\n|\r)*\*\/',
-        'python_double': '(?:^|[ \t])+"""(((?!""").)|\n|\r)*"""',
-        'python_single': '(?:^|[ \t])+\'\'\'(((?!\'\'\').)|\n|\r)*\'\'\'',
-        'html': '(?:^|[ \t])+<!--(((?!<!--).)|\n|\r)*-->'
+        'c': '(?:^|[ \t])+\/\*((?:(?:(?!\/\*).)|\n|\r)*)\*\/(?:(?:[^"]*"[^"]")*[^"]*(?:$))'
+        # 'c': '(?:^|[ \t])+\/\*(((?!\/\*).)|\n|\r)*\*\/',
+        # 'python_double': '(?:^|[ \t])+"""(((?!""").)|\n|\r)*"""',
+        # 'python_single': '(?:^|[ \t])+\'\'\'(((?!\'\'\').)|\n|\r)*\'\'\'',
+        # 'html': '(?:^|[ \t])+<!--(((?!<!--).)|\n|\r)*-->'
     }
-    '''
 
     list_start_pattern = r'\[(?=([^"\\]*(\\.|"([^"\\]*\\.)*[^"\\]*"))*[^"]*$)'
     list_end_pattern = r'\](?=([^"\\]*(\\.|"([^"\\]*\\.)*[^"\\]*"))*[^"]*$)'
@@ -331,6 +377,12 @@ def loads(text):
                     l = re.sub(single_line_patterns[k], '".jsonc_{}_comment_{}": "\\1"'.format(k, str(uuid.uuid4())), l, count=1)
                 else:
                     l = re.sub(single_line_patterns[k], '".jsonc_{}_comment_{}: \\1"'.format(k, str(uuid.uuid4())), l, count=1)
+        for k in block_patterns:
+            if re.search(block_patterns[k], l):
+                if map_count > list_count:
+                    l = re.sub(block_patterns[k], '".jsonc_block_{}_comment_{}": "\\1"'.format(k, str(uuid.uuid4())), l, count=1)
+                else:
+                    l = re.sub(block_patterns[k], '".jsonc_block_{}_comment_{}: \\1"'.format(k, str(uuid.uuid4())), l, count=1)
         lines[i] = l
     lines = '\n'.join(lines).split('\n')
     for i in range(1, len(lines) - 2):
@@ -387,6 +439,15 @@ def dumps(data, indent=4, comments=True):
     text = re.sub(r'\n\s*"\.jsonc_inline_c_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}\: (.*)",?', ' //\\1', text)
     # replace inline python-style comments that are in a list
     text = re.sub(r'\n\s*"\.jsonc_inline_python_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}\: (.*)",?', ' #\\1', text)
+
+    # replace block c-style comments that are in a map
+    text = re.sub(r'"\.jsonc_block_c_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}"\: "(.*)",?', '/*\\1*/', text)
+    # replace block c-style comments that are in a list
+    text = re.sub(r'"\.jsonc_block_c_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}\: (.*)",?', '/*\\1*/', text)
+
+    # replace newline placeholders
+    text = text.replace('<JSONC_LINUX_NEWLINE>', '\n')
+    text = text.replace('<JSONC_WINDOWS_NEWLINE>', '\r\n')
 
     lines = text.split('\n')
     for i in range(1, len(lines) - 2):
