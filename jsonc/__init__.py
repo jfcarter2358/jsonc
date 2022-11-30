@@ -4,7 +4,7 @@ import uuid
 import copy
 import collections
 
-__version__ = '1.0.4'
+__version__ = '1.1.0'
 
 def _finditem(obj, key):
     if key in obj: return obj[key]
