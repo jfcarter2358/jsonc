@@ -1,4 +1,7 @@
 {
+    /*
+    This is a block comment
+    */
     # this is another test comment
     "hello": "world",
     "foo": [
@@ -12,6 +15,7 @@
         }
         // here is another comment in a list
     ],
+    /* Here is another block comment */
     "bar": {
         "a": "b",
         // a c comment
